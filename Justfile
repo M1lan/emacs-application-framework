@@ -280,7 +280,7 @@ diff:
 
 # Search for a pattern across all Python + Elisp files.
 search pattern:
-    rg "{{pattern}}" --type py --glob '*.el' --glob '*.js'
+    rg "{{pattern}}" --type py --glob '*.el' --glob '*.js' -g '!node_modules'
 
 # Search only core framework files (not apps).
 search-core pattern:
@@ -298,21 +298,64 @@ tree-full:
 # fzf-powered workflows
 # ---------------------------------------------------------------------------
 
-# [fzf] Launcher -- pick an fzf workflow to run.
+# [fzf] Categorized menu -- the main entry point for interactive workflows.
 fzf:
     #!/usr/bin/env bash
-    declare -A cmds=(
-        ["apps-pick       Install a specific app"]="apps-pick"
-        ["edit            Open a source file"]="edit"
-        ["search-fzf      Grep + open at line"]="search-fzf"
-        ["branch          Checkout a branch"]="branch"
-        ["pick            Run any just recipe"]="pick"
+    # Build menu with categories and descriptions.
+    # Lines with ── are category headers. Lines with * are recommended.
+    menu=$(printf '%s\n' \
+        "── ESSENTIALS ──────────────────────────" \
+        "* update            Pull + reinstall everything" \
+        "* lint              Full lint pass (py + el + md + sh)" \
+        "* info              Environment diagnostics" \
+        "── INSTALL ─────────────────────────────" \
+        "  install           Run the standard installer" \
+        "  install-new       Add newly-available apps" \
+        "  install-all       Install every app in the catalog" \
+        "  apps-pick         Pick a single app to install" \
+        "── CODE QUALITY ────────────────────────" \
+        "  py-lint           Ruff lint (Python)" \
+        "  py-fix            Ruff auto-fix (Python)" \
+        "  py-fmt            Ruff format (Python)" \
+        "  el-check          Byte-compile Elisp" \
+        "  rumdl             Lint Markdown" \
+        "  check             Quick pre-push check" \
+        "── APPS ────────────────────────────────" \
+        "  apps              List installed apps" \
+        "  apps-available    Show full app catalog" \
+        "  apps-status       Git status of all app repos" \
+        "  apps-update       Pull latest for all apps" \
+        "── SEARCH ──────────────────────────────" \
+        "* search-fzf        Live grep + open at line" \
+        "* edit              Fuzzy-find + open a source file" \
+        "  search-core       Search core framework files" \
+        "  tree              Project tree (eza)" \
+        "── GIT ─────────────────────────────────" \
+        "  pull              Git pull" \
+        "  log               Oneline commit graph" \
+        "  diff              Show uncommitted changes" \
+        "  branch            Switch branch (fzf)" \
+        "  amend             Amend last commit" \
+        "── HOUSEKEEPING ────────────────────────" \
+        "  clean             Remove .elc + __pycache__" \
+        "  clean-all         clean + node_modules" \
+        "  node-install      pnpm install across all apps" \
+        "  loc               Lines of code (tokei)" \
+        "  deps              Show dependency tree" \
     )
-    label=$(printf '%s\n' "${!cmds[@]}" | sort \
-        | fzf --prompt="fzf> " --height=40% --reverse)
-    [[ -n "$label" ]] && just "${cmds[$label]}"
+    # Extract recipe name from selection.
+    selection=$(echo "$menu" \
+        | fzf --prompt="EAF> " --height=80% --reverse --ansi \
+              --header="Pick a recipe  (* = recommended)" \
+              --color="header:bold,pointer:bright-cyan" \
+              --no-mouse \
+        | sed 's/^[* ]*//' | awk '{print $1}')
+    # Skip category headers and empty selections.
+    if [[ -n "$selection" && "$selection" != "──" ]]; then
+        just "$selection"
+    fi
 
-# [fzf] Pick any recipe to run.
+# [fzf] Pick any recipe to run (flat list, no categories).
 pick:
     #!/usr/bin/env bash
     recipe=$(just --list --unsorted \
@@ -336,14 +379,18 @@ edit:
         | fzf --prompt="edit> " --height=40% --reverse --preview 'head -80 {}')
     [[ -n "$file" ]] && {{editor}} "$file"
 
-# [fzf] Search for a pattern, pick a match, open it.
+# [fzf] Live grep -- type a pattern, results update in real time, pick to open.
 search-fzf:
     #!/usr/bin/env bash
-    match=$(rg --line-number --no-heading --type py --glob '*.el' --glob '*.js' \
-        -E node_modules '.' \
-        | fzf --prompt="search> " --height=60% --reverse \
-              --preview 'file=$(echo {} | cut -d: -f1); line=$(echo {} | cut -d: -f2); head -n $((line + 30)) "$file" | tail -n 60' \
-              --delimiter=: --nth=3..)
+    RG_CMD="rg --line-number --no-heading --color=always --type py --glob '*.el' --glob '*.js' -g '!node_modules'"
+    match=$(
+        fzf --prompt="grep> " --height=80% --reverse --ansi --disabled \
+            --bind "change:reload:$RG_CMD {q} || true" \
+            --bind "start:reload:echo 'Type to search...'" \
+            --preview 'file=$(echo {} | cut -d: -f1); line=$(echo {} | cut -d: -f2); [[ -f "$file" ]] && head -n $((line + 30)) "$file" | tail -n 60 || echo ""' \
+            --delimiter=: --nth=3.. \
+            --header="Type a pattern to search Python/Elisp/JS files"
+    )
     if [[ -n "$match" ]]; then
         file=$(echo "$match" | cut -d: -f1)
         line=$(echo "$match" | cut -d: -f2)
