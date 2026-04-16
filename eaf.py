@@ -592,7 +592,7 @@ class OCRThread(QThread):
                 import traceback
                 traceback.print_exc()
 
-                message_to_emacs("Please use pip3 install PaddleOCR or EasyOCR first.")
+                message_to_emacs("Please use 'uv pip install paddleocr' or 'uv pip install easyocr' first.")
 
         import os
         os.remove(self.image_path)

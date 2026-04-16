@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import sysconfig
 from shutil import rmtree, which
 
 parser = argparse.ArgumentParser()
@@ -36,8 +35,8 @@ parser.add_argument("--app-save-local-edit", action="store_true",
                     help='compared with --app-drop-local-edit, this option will stash your changes')
 args = parser.parse_args()
 
-NPM_CMD = "npm.cmd" if sys.platform == "win32" else "npm"
-PIP_CMD = "pip3" if which("pip3") else "pip" # mac only have pip3, so we need use pip3 instead pip
+NPM_CMD = "pnpm.cmd" if sys.platform == "win32" else "pnpm"
+UV_CMD = "uv"
 
 class bcolors:
     HEADER = '\033[95m'
@@ -64,7 +63,7 @@ available_apps_dict = get_available_apps_dict()
 
 install_failed_sys = []
 install_failed_pys = []
-install_failed_npm_globals = []
+install_failed_pnpm_globals = []
 install_failed_apps = []
 
 important_messages = [
@@ -76,7 +75,7 @@ def run_command(command, path=script_path, ensure_pass=True, get_result=False):
     print("[EAF] Running", ' '.join(command), "@", path)
 
     # Throw exception if command not found,
-    # We found install-eaf.py still can work even it not found npm in system.
+    # We found install-eaf.py still can work even it not found pnpm in system.
     if (not which(command[0])) and ensure_pass:
         raise Exception(f"Not found command: {command[0]}")
 
@@ -105,7 +104,7 @@ def prune_existing_sys_deps(deps_list):
     for dep in deps_list:
         if "node" in dep and which("node"):
             remove_deps.append(dep)
-        elif "npm" in dep and which("npm"):
+        elif "pnpm" in dep and which("pnpm"):
             remove_deps.append(dep)
     return list(set(deps_list) - set(remove_deps))
 
@@ -151,15 +150,7 @@ def install_sys_deps(distro: str, deps_list):
         install_failed_sys.append(' '.join(command))
 
 def install_py_deps(deps_list):
-    if sys.prefix == sys.base_prefix:
-        # pass --break-system-packages to permit installing packages into EXTERNALLY-MANAGED Python installations. see https://github.com/pypa/pip/issues/11780
-        if get_distro() != "guix" and os.path.exists(os.path.join(sysconfig.get_path("stdlib", sysconfig.get_default_scheme() if hasattr(sysconfig, "get_default_scheme") else sysconfig._get_default_scheme()),"EXTERNALLY-MANAGED")):
-            command = [PIP_CMD, 'install', '--user', '--break-system-packages', '-U']
-        else:
-            command = [PIP_CMD, 'install', '--user', '-U']
-    else:
-        # if running on a virtual env, --user option is not valid.
-        command = [PIP_CMD, 'install', '-U']
+    command = [UV_CMD, 'pip', 'install', '--system']
     command.extend(deps_list)
     try:
         run_command(command)
@@ -167,15 +158,15 @@ def install_py_deps(deps_list):
         print("Error:", e)
         install_failed_pys.append(' '.join(command))
 
-def install_npm_gloal_deps(deps_list):
-    command = ["sudo", NPM_CMD, "install", "-g"]
+def install_pnpm_global_deps(deps_list):
+    command = ["sudo", NPM_CMD, "add", "--global"]
     command.extend(deps_list)
 
     try:
         run_command(command)
     except Exception as e:
         print("Error:", e)
-        install_failed_npm_globals.append(' '.join(command))
+        install_failed_pnpm_globals.append(' '.join(command))
 
 def remove_node_modules_path(app_path_list):
     for app_path in app_path_list:
@@ -184,16 +175,16 @@ def remove_node_modules_path(app_path_list):
             rmtree(node_modules_path)
             print("[EAF] WARN: removing {}".format(node_modules_path))
 
-def install_npm_install(app_path_list):
+def install_pnpm_install(app_path_list):
     for app_path in app_path_list:
-        command = [NPM_CMD, "install", "--force"]
+        command = [NPM_CMD, "install"]
         try:
             run_command(command, path=app_path)
         except Exception as e:
             print("Error:", e)
             install_failed_apps.append(app_path)
 
-def install_npm_rebuild(app_path_list):
+def install_pnpm_rebuild(app_path_list):
     for app_path in app_path_list:
         command = [NPM_CMD, "rebuild"]
         try:
@@ -204,7 +195,7 @@ def install_npm_rebuild(app_path_list):
 
 def install_vue_install(app_path_list):
     for app_path in app_path_list:
-        command = [NPM_CMD, "install", "--force"]
+        command = [NPM_CMD, "install"]
         try:
             run_command(command, path=app_path)
         except Exception as e:
@@ -328,8 +319,8 @@ def install_core_deps(distro, deps_dict):
         core_deps.extend(deps_dict[distro])
         if len(core_deps) > 0:
             install_sys_deps(distro, core_deps)
-    if (not args.ignore_py_deps or sys.platform != "linux") and sys.platform in deps_dict["pip"]:
-        # For pip dependencies, the distribution name takes precedence over the os name.
+    if (not args.ignore_py_deps or sys.platform != "linux") and sys.platform in deps_dict["uv"]:
+        # For uv dependencies, the distribution name takes precedence over the os name.
         #
         # For example, in Arch Linux, we need install PyQt from Arch repository to instead install from PIP repository
         # to make EAF browser support HTML5 video:
@@ -338,10 +329,10 @@ def install_core_deps(distro, deps_dict):
         #     sudo rm -rf /usr/lib/python3.10/site-packages/PyQt6*
         #     sudo pacman -S python-pyqt6-webengine python-pyqt6 python-pyqt6-sip
         distro = get_distro()
-        if distro in deps_dict["pip"]:
-            install_py_deps(deps_dict["pip"][distro])
+        if distro in deps_dict["uv"]:
+            install_py_deps(deps_dict["uv"][distro])
         else:
-            install_py_deps(deps_dict["pip"][sys.platform])
+            install_py_deps(deps_dict["uv"][sys.platform])
 
     print("[EAF] Finished installing core dependencies")
 
@@ -428,10 +419,10 @@ def install_app_deps(distro, deps_dict):
 
     sys_deps = []
     py_deps = []
-    npm_global_deps = []
-    npm_install_apps = []
+    pnpm_global_deps = []
+    pnpm_install_apps = []
     vue_install_apps = []
-    npm_rebuild_apps = []
+    pnpm_rebuild_apps = []
     for pending_apps_dict in pending_apps_dict_list:
         for app_name, app_spec_dict in pending_apps_dict.items():
             updated = True
@@ -446,17 +437,17 @@ def install_app_deps(distro, deps_dict):
                     deps_dict = json.load(f)
                 if not args.ignore_sys_deps and sys.platform == "linux" and distro in deps_dict:
                     sys_deps.extend(deps_dict[distro])
-                if not args.ignore_py_deps and 'pip' in deps_dict and sys.platform in deps_dict['pip']:
-                    py_deps.extend(deps_dict['pip'][sys.platform])
-                if "npm_global" in deps_dict:
-                    npm_global_deps.extend(deps_dict["npm_global"])
+                if not args.ignore_py_deps and 'uv' in deps_dict and sys.platform in deps_dict['uv']:
+                    py_deps.extend(deps_dict['uv'][sys.platform])
+                if "pnpm_global" in deps_dict:
+                    pnpm_global_deps.extend(deps_dict["pnpm_global"])
                 if not args.ignore_node_deps:
-                    if 'npm_install' in deps_dict and deps_dict['npm_install']:
-                        npm_install_apps.append(app_path)
+                    if 'pnpm_install' in deps_dict and deps_dict['pnpm_install']:
+                        pnpm_install_apps.append(app_path)
                     if 'vue_install' in deps_dict and deps_dict['vue_install']:
                         vue_install_apps.append(app_path)
-                    if 'npm_rebuild' in deps_dict and deps_dict['npm_rebuild']:
-                        npm_rebuild_apps.append(app_path)
+                    if 'pnpm_rebuild' in deps_dict and deps_dict['pnpm_rebuild']:
+                        pnpm_rebuild_apps.append(app_path)
 
     print("\n[EAF] Installing dependencies for the selected applications")
     if not args.ignore_sys_deps and sys.platform == "linux" and len(sys_deps) > 0:
@@ -465,18 +456,18 @@ def install_app_deps(distro, deps_dict):
     if not args.ignore_py_deps and len(py_deps) > 0:
         print("[EAF] Installing python dependencies")
         install_py_deps(py_deps)
-    if len(npm_global_deps) > 0:
-        install_npm_gloal_deps(npm_global_deps)
+    if len(pnpm_global_deps) > 0:
+        install_pnpm_global_deps(pnpm_global_deps)
     if not args.ignore_node_deps:
         if args.force:
-            if len(npm_install_apps) > 0:
-                remove_node_modules_path(npm_install_apps)
+            if len(pnpm_install_apps) > 0:
+                remove_node_modules_path(pnpm_install_apps)
             if len(vue_install_apps) > 0:
                 remove_node_modules_path(vue_install_apps)
-        if len(npm_install_apps) > 0:
-            install_npm_install(npm_install_apps)
-        if len(npm_rebuild_apps) > 0:
-            install_npm_rebuild(npm_rebuild_apps)
+        if len(pnpm_install_apps) > 0:
+            install_pnpm_install(pnpm_install_apps)
+        if len(pnpm_rebuild_apps) > 0:
+            install_pnpm_rebuild(pnpm_rebuild_apps)
         if len(vue_install_apps) > 0:
             install_vue_install(vue_install_apps)
 
@@ -485,7 +476,7 @@ def install_app_deps(distro, deps_dict):
 
     global install_failed_sys
     global install_failed_pys
-    global install_failed_npm_globals
+    global install_failed_pnpm_globals
     global install_failed_apps
     if len(install_failed_sys) > 0:
         install_failed_sys = list(set(install_failed_sys))
@@ -497,10 +488,10 @@ def install_app_deps(distro, deps_dict):
         print_warning_message("\n[EAF] Installation FAILED for the following Python dependencies:")
         for dep in install_failed_pys:
             print_warning_message(dep)
-    if len(install_failed_npm_globals) > 0:
-        install_failed_npm_globals = list(set(install_failed_npm_globals))
-        print_warning_message("\n[EAF] Installation FAILED for the following NPM dependencies:")
-        for dep in install_failed_npm_globals:
+    if len(install_failed_pnpm_globals) > 0:
+        install_failed_pnpm_globals = list(set(install_failed_pnpm_globals))
+        print_warning_message("\n[EAF] Installation FAILED for the following pnpm dependencies:")
+        for dep in install_failed_pnpm_globals:
             print_warning_message(dep)
     if len(install_failed_apps) > 0:
         install_failed_apps = list(set(install_failed_apps))

@@ -2,7 +2,7 @@
   "pacman": [
     "wmctrl",
     "nodejs",
-    "npm",
+    "pnpm",
     "python-pyqt6-webengine",
     "python-pyqt6",
     "python-pyqt6-sip",
@@ -26,33 +26,33 @@
   "apt": [
     "wmctrl",
     "nodejs",
-    "npm",
+    "pnpm",
     "libxcb-cursor-dev"
   ],
   "dnf": [
     "wmctrl",
     "nodejs",
-    "npm"
+    "pnpm"
   ],
   "pkg": [
     "wmctrl",
     "node",
-    "npm"
+    "pnpm"
   ],
   "zypper": [
     "wmctrl",
     "nodejs16",
-    "npm16"
+    "pnpm"
   ],
   "xbps": [
     "wmctrl",
     "nodejs",
-    "npm"
+    "pnpm"
   ],
   "brew": [
     "node"
   ],
-  "pip": {
+  "uv": {
     "pacman": [
       "epc",
       "sexpdata==1.0.0",
