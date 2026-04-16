@@ -1,0 +1,9 @@
+# rumdl configuration for EAF
+# Disable rules that conflict with upstream README conventions.
+
+[global]
+disable = [
+    "MD013",  # Line length -- READMEs have long URLs and tables
+    "MD033",  # Inline HTML -- needed for images, badges, contributor widgets
+    "MD041",  # First heading -- README.zh-CN.md uses <p align="center"> first
+]

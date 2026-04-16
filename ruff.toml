@@ -1,0 +1,10 @@
+# Ruff configuration for EAF
+# https://docs.astral.sh/ruff/settings/
+
+target-version = "py39"
+
+[lint]
+# F403: star imports are intentional (core.utils provides the EAF API surface)
+# F405: consequence of F403 -- names are defined in core.utils
+# E722: bare except is used pervasively in upstream EAF
+ignore = ["F403", "F405", "E722"]
